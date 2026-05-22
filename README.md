@@ -1,6 +1,22 @@
 # Bookly Support Agent
 
-Local support-agent demo for a my passion project to create amazing CX agents. V1 is text-first; V2 adds optional browser voice chat while keeping web chat as the default. It uses simple Python orchestration, mocked support tools, and a browser UI that makes routing, memory, clarifying questions, and tool calls visible on each turn.
+Local support-agent demo for a my passion project to create amazing CX agents. V1 is text-first web chat; V2 adds optional browser voice chat while keeping web chat as the default. It uses simple Python orchestration, mocked support tools, and a browser UI that makes routing, memory, clarifying questions, and tool calls visible on each turn.
+
+## Feature Comparison: V1 vs V2
+
+| Feature                              | V1: Web Chat (Baseline)                | V2: Voice Mode (Enhanced)                |
+|--------------------------------------|----------------------------------------|------------------------------------------|
+| Web chat UI                          | ✅                                      | ✅                                        |
+| Voice chat (browser mic, STT/TTS)    | ❌                                      | ✅ (Web Speech API, SpeechSynthesis)      |
+| Multi-turn flows                     | ✅                                      | ✅                                        |
+| Clarifying questions                 | ✅                                      | ✅                                        |
+| Mocked order/return/policy tools     | ✅                                      | ✅                                        |
+| Guardrails for out-of-scope queries  | ✅                                      | ✅                                        |
+| Orchestration trace panel            | ✅                                      | ✅ (shows channel: web/voice)             |
+| Channel selection (web/voice)        | ❌                                      | ✅ (toggle in UI)                         |
+| Voice fallback to text input         | ❌                                      | ✅ (if mic unavailable)                   |
+| API keys required                    | ❌                                      | ❌ (browser default, future-ready)        |
+| Future provider placeholders         | ❌                                      | ✅ (`.env.example` for STT/TTS)           |
 
 ## Run locally
 
@@ -12,14 +28,24 @@ Open http://127.0.0.1:8000.
 
 No package install is required for this version.
 
-## V2 voice mode
+## V1: Web Chat (Baseline)
+
+- **Web chat only**: Users interact via a browser-based chat UI.
+- **Simple agent**: Handles order status, returns, and policy questions using explicit Python orchestration.
+- **Multi-turn flows**: Collects required info (order number, reason, etc.) over several turns.
+- **Clarifying questions**: Asks for missing details instead of guessing.
+- **Mocked tools**: No real backend; all order, return, and policy actions are simulated.
+- **Guardrails**: Politely declines out-of-scope requests.
+- **Trace panel**: Shows routing, memory, clarifier, and tool steps for each turn.
+
+## V2: Voice Mode (Enhanced)
 
 Web chat is selected by default. Click `Voice chat` to reveal the microphone button.
 
-- STT: browser Web Speech API
-- TTS: browser SpeechSynthesis
-- Required API keys: none for the default browser mode
-- Future provider placeholders: see `.env.example`
+- **STT**: browser Web Speech API
+- **TTS**: browser SpeechSynthesis
+- **Required API keys**: none for the default browser mode
+- **Future provider placeholders**: see `.env.example`
 
 Voice support depends on the browser and microphone permissions. If speech recognition is unavailable, the same UI still accepts typed messages in voice mode.
 
