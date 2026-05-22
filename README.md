@@ -1,6 +1,6 @@
 # Bookly Support Agent
 
-Local support-agent demo for a solutions engineering take-home. V1 is text-first; V2 adds optional browser voice chat while keeping web chat as the default. It uses simple Python orchestration, mocked support tools, and a browser UI that makes routing, memory, clarifying questions, and tool calls visible on each turn.
+Local support-agent demo for a my passion project to create amazing CX agents. V1 is text-first; V2 adds optional browser voice chat while keeping web chat as the default. It uses simple Python orchestration, mocked support tools, and a browser UI that makes routing, memory, clarifying questions, and tool calls visible on each turn.
 
 ## Run locally
 
