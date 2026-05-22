@@ -27,13 +27,15 @@ class AgentResult:
 class BooklySupportAgent:
     """Small, explicit Python orchestrator for the Bookly support demo."""
 
-    def handle(self, message: str, state: AgentState | None = None) -> AgentResult:
+    def handle(
+        self, message: str, state: AgentState | None = None, channel: str = "web_chat"
+    ) -> AgentResult:
         state = state or AgentState()
         trace: list[dict[str, Any]] = []
         text = message.strip()
         lower = text.lower()
 
-        self._trace(trace, "input", "received", {"message": text})
+        self._trace(trace, "input", "received", {"message": text, "channel": channel})
         extracted = self._extract_slots(text)
         state.slots.update({key: value for key, value in extracted.items() if value})
         self._trace(trace, "memory", "updated_slots", {"slots": dict(state.slots)})

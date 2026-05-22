@@ -30,6 +30,8 @@ HTML = """<!doctype html>
       --panel: #f7f9fb;
       --accent: #0f766e;
       --accent-strong: #115e59;
+      --voice: #7c2d12;
+      --voice-bg: #fff7ed;
       --user: #e7f5f2;
       --agent: #ffffff;
     }
@@ -87,6 +89,65 @@ HTML = """<!doctype html>
       font-weight: 650;
     }
     button.primary:hover { background: var(--accent-strong); }
+    button.icon {
+      width: 44px;
+      min-width: 44px;
+      padding: 0;
+      display: inline-grid;
+      place-items: center;
+    }
+    button.icon svg {
+      width: 18px;
+      height: 18px;
+      stroke-width: 2.2;
+    }
+    button.icon.active {
+      border-color: var(--voice);
+      background: var(--voice-bg);
+      color: var(--voice);
+    }
+    .mode-bar {
+      padding: 12px 24px 0;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      border-top: 1px solid var(--line);
+    }
+    .mode-buttons {
+      display: flex;
+      gap: 8px;
+    }
+    .mode-button {
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      min-height: 36px;
+      color: var(--muted);
+    }
+    .mode-button svg {
+      width: 17px;
+      height: 17px;
+      stroke-width: 2.2;
+    }
+    .mode-button.active {
+      border-color: var(--accent);
+      color: var(--accent-strong);
+      background: var(--user);
+      font-weight: 650;
+    }
+    .mode-button.voice.active {
+      border-color: var(--voice);
+      color: var(--voice);
+      background: var(--voice-bg);
+    }
+    .voice-status {
+      min-height: 18px;
+      color: var(--muted);
+      font-size: 13px;
+      overflow-wrap: anywhere;
+      text-align: right;
+    }
     #chat {
       flex: 1;
       overflow: auto;
@@ -200,6 +261,19 @@ HTML = """<!doctype html>
       padding: 7px 9px;
       color: var(--muted);
     }
+    @media (max-width: 560px) {
+      header, #chat, .examples, .mode-bar, form {
+        padding-left: 16px;
+        padding-right: 16px;
+      }
+      .mode-bar {
+        align-items: flex-start;
+        flex-direction: column;
+      }
+      .voice-status {
+        text-align: left;
+      }
+    }
     @media (max-width: 860px) {
       .app { grid-template-columns: 1fr; }
       aside {
@@ -216,7 +290,7 @@ HTML = """<!doctype html>
       <header>
         <div>
           <h1>Bookly Support Agent</h1>
-          <div class="subtitle">Text-first demo with explicit Python orchestration and mocked support tools</div>
+          <div class="subtitle">V2 demo with web chat by default and optional browser voice chat</div>
         </div>
         <button id="reset" type="button">Reset</button>
       </header>
@@ -226,7 +300,33 @@ HTML = """<!doctype html>
         <button data-example="I want to return BLY-1002">Return flow</button>
         <button data-example="What is your shipping policy?">Policy question</button>
       </div>
+      <div class="mode-bar" aria-label="Conversation mode">
+        <div class="mode-buttons">
+          <button id="web-chat-mode" class="mode-button active" type="button" aria-pressed="true">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true">
+              <path d="M21 15a4 4 0 0 1-4 4H8l-5 3V7a4 4 0 0 1 4-4h10a4 4 0 0 1 4 4z"></path>
+            </svg>
+            Web chat
+          </button>
+          <button id="voice-chat-mode" class="mode-button voice" type="button" aria-pressed="false">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true">
+              <path d="M12 3a3 3 0 0 0-3 3v6a3 3 0 0 0 6 0V6a3 3 0 0 0-3-3Z"></path>
+              <path d="M19 10v2a7 7 0 0 1-14 0v-2"></path>
+              <path d="M12 19v3"></path>
+            </svg>
+            Voice chat
+          </button>
+        </div>
+        <div id="voice-status" class="voice-status">Web chat is selected.</div>
+      </div>
       <form id="form">
+        <button id="voice" class="icon" type="button" aria-label="Start voice input" title="Start voice input" hidden>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true">
+            <path d="M12 3a3 3 0 0 0-3 3v6a3 3 0 0 0 6 0V6a3 3 0 0 0-3-3Z"></path>
+            <path d="M19 10v2a7 7 0 0 1-14 0v-2"></path>
+            <path d="M12 19v3"></path>
+          </svg>
+        </button>
         <input id="message" autocomplete="off" placeholder="Ask about an order, return, refund, shipping, or password reset">
         <button class="primary" type="submit">Send</button>
       </form>
@@ -247,6 +347,45 @@ HTML = """<!doctype html>
     const trace = document.querySelector("#trace");
     const form = document.querySelector("#form");
     const input = document.querySelector("#message");
+    const webChatMode = document.querySelector("#web-chat-mode");
+    const voiceChatMode = document.querySelector("#voice-chat-mode");
+    const voiceButton = document.querySelector("#voice");
+    const voiceStatus = document.querySelector("#voice-status");
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    const recognition = SpeechRecognition ? new SpeechRecognition() : null;
+    let activeChannel = "web_chat";
+    let isListening = false;
+
+    if (recognition) {
+      recognition.lang = "en-US";
+      recognition.interimResults = false;
+      recognition.continuous = false;
+
+      recognition.addEventListener("start", () => {
+        isListening = true;
+        voiceButton.classList.add("active");
+        voiceButton.setAttribute("aria-label", "Stop voice input");
+        voiceButton.title = "Stop voice input";
+        voiceStatus.textContent = "Listening...";
+      });
+
+      recognition.addEventListener("result", event => {
+        const transcript = event.results[0][0].transcript.trim();
+        voiceStatus.textContent = `Heard: ${transcript}`;
+        if (transcript) sendMessage(transcript, "voice_chat");
+      });
+
+      recognition.addEventListener("error", event => {
+        voiceStatus.textContent = `Voice input stopped: ${event.error.replace(/-/g, " ")}`;
+      });
+
+      recognition.addEventListener("end", () => {
+        isListening = false;
+        voiceButton.classList.remove("active");
+        voiceButton.setAttribute("aria-label", "Start voice input");
+        voiceButton.title = "Start voice input";
+      });
+    }
 
     function addMessage(role, text) {
       const node = document.createElement("div");
@@ -278,17 +417,47 @@ HTML = """<!doctype html>
       }[char]));
     }
 
-    async function sendMessage(text) {
+    function speak(text) {
+      if (activeChannel !== "voice_chat" || !("speechSynthesis" in window)) return;
+      const plainText = text.replace(/\\*\\*(.*?)\\*\\*/g, "$1").replace(/\\*(.*?)\\*/g, "$1");
+      window.speechSynthesis.cancel();
+      window.speechSynthesis.speak(new SpeechSynthesisUtterance(plainText));
+    }
+
+    function setMode(channel) {
+      activeChannel = channel;
+      const isVoice = channel === "voice_chat";
+      webChatMode.classList.toggle("active", !isVoice);
+      voiceChatMode.classList.toggle("active", isVoice);
+      webChatMode.setAttribute("aria-pressed", String(!isVoice));
+      voiceChatMode.setAttribute("aria-pressed", String(isVoice));
+      voiceButton.hidden = !isVoice;
+      input.placeholder = isVoice
+        ? "Click the microphone or type your Bookly support request"
+        : "Ask about an order, return, refund, shipping, or password reset";
+      if (!isVoice) {
+        if (isListening && recognition) recognition.stop();
+        window.speechSynthesis?.cancel();
+        voiceStatus.textContent = "Web chat is selected.";
+        return;
+      }
+      voiceStatus.textContent = recognition
+        ? "Voice chat is selected. Click the microphone to speak."
+        : "Voice input is unavailable in this browser. You can still type in voice mode.";
+    }
+
+    async function sendMessage(text, channel = activeChannel) {
       addMessage("user", text);
       input.value = "";
       const res = await fetch("/chat", {
         method: "POST",
         headers: {"Content-Type": "application/json"},
-        body: JSON.stringify({session_id: sessionId, message: text})
+        body: JSON.stringify({session_id: sessionId, message: text, channel})
       });
       const data = await res.json();
       addMessage("agent", data.response);
       renderTrace(data.trace);
+      speak(data.response);
     }
 
     form.addEventListener("submit", event => {
@@ -305,7 +474,24 @@ HTML = """<!doctype html>
       });
       chat.innerHTML = "";
       trace.innerHTML = "";
+      window.speechSynthesis?.cancel();
       addMessage("agent", "Hi, I’m Bookly’s support agent. I can check order status, start returns, and answer policy questions.");
+    });
+
+    webChatMode.addEventListener("click", () => setMode("web_chat"));
+    voiceChatMode.addEventListener("click", () => setMode("voice_chat"));
+
+    voiceButton.addEventListener("click", () => {
+      if (!recognition) {
+        voiceStatus.textContent = "Voice input is unavailable in this browser. You can still type.";
+        input.focus();
+        return;
+      }
+      if (isListening) {
+        recognition.stop();
+        return;
+      }
+      recognition.start();
     });
 
     document.querySelectorAll("[data-example]").forEach(button => {
@@ -316,6 +502,7 @@ HTML = """<!doctype html>
     });
 
     addMessage("agent", "Hi, I’m Bookly’s support agent. I can check order status, start returns, and answer policy questions.");
+    setMode("web_chat");
   </script>
 </body>
 </html>
@@ -353,8 +540,12 @@ class Handler(BaseHTTPRequestHandler):
             self._send_json({"error": "message_required"}, status=400)
             return
 
+        channel = str(payload.get("channel", "web_chat")).strip().lower()
+        if channel not in {"web_chat", "voice_chat"}:
+            channel = "web_chat"
+
         state = sessions.get(session_id, AgentState())
-        result = agent.handle(message, state)
+        result = agent.handle(message, state, channel=channel)
         sessions[session_id] = result.state
         self._send_json({"response": result.response, "trace": result.trace})
 
@@ -386,4 +577,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-

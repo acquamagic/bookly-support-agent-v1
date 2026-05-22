@@ -30,7 +30,10 @@ class BooklySupportAgentTests(unittest.TestCase):
         self.assertIn("order status", result.response)
         self.assertFalse(any(step["type"] == "tool" for step in result.trace))
 
+    def test_voice_chat_channel_is_visible_in_trace(self):
+        result = self.agent.handle("What is your shipping policy?", channel="voice_chat")
+        self.assertEqual(result.trace[0]["details"]["channel"], "voice_chat")
+
 
 if __name__ == "__main__":
     unittest.main()
-

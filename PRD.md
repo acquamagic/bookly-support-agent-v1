@@ -1,8 +1,8 @@
-# PRD: Bookly Text-First Support Agent
+# PRD: Bookly Support Agent V2
 
 ## Summary
 
-Build a local, text-first customer support agent for Bookly, a fictional online bookstore. The demo helps customers check order status, start returns, and answer policy questions while showing each orchestration step in a visible trace.
+Build a local customer support agent for Bookly, a fictional online bookstore. V1 provides web chat. V2 adds optional voice chat while keeping web chat as the default. The demo helps customers check order status, start returns, and answer policy questions while showing each orchestration step in a visible trace.
 
 ## Why Now
 
@@ -15,13 +15,14 @@ Bookly support teams need faster first responses without losing trust. The demoâ
 - Show at least one mocked tool action.
 - Ask clarifying questions instead of prematurely answering ambiguous requests.
 - Make orchestration visible for a solutions engineering audience.
+- Add a voice-chat path without replacing the default web-chat path.
 
 ## Non-Goals
 
 - Production authentication, persistence, or PII controls.
 - Full Bookly policy coverage.
-- Voice interaction in phase one.
 - LangGraph or all-in-one agent frameworks.
+- Production telephony, call recording, or streaming voice infrastructure.
 
 ## Primary Users
 
@@ -29,7 +30,7 @@ Bookly support teams need faster first responses without losing trust. The demoâ
 - Bookly CX leader: wants containment without risky or fabricated answers.
 - Technical evaluator: wants to see technical judgment, agent architecture, and tradeoffs.
 
-## Phase One Scope
+## V1 Web-Chat Scope
 
 ### Use Cases
 
@@ -56,6 +57,7 @@ Bookly support teams need faster first responses without losing trust. The demoâ
 ## Functional Requirements
 
 - The user can chat in a browser UI.
+- The user can choose web chat or voice chat, with web chat selected by default.
 - The system maintains short-lived session state for multi-turn slot filling.
 - Each assistant response includes a trace with router, memory, clarifier, tool, and tool result steps where applicable.
 - The demo uses mocked tools and sample orders.
@@ -63,7 +65,28 @@ Bookly support teams need faster first responses without losing trust. The demoâ
 
 ## Product Experience
 
-The first screen is the working support console, not a landing page. The left side contains the conversation. The right side shows the orchestration trace so the presenter can narrate what the agent is doing and why.
+The first screen is the working support console, not a landing page. The left side contains the conversation, examples, web-chat and voice-chat controls, and composer. The right side shows the orchestration trace so the presenter can narrate what the agent is doing and why.
+
+## V2 Voice-Chat Scope
+
+1. Mode selection
+   - Web chat is active by default.
+   - Voice chat is enabled when the user clicks the voice-chat control.
+   - The same conversation and trace panels are used for both modes.
+
+2. Speech-to-text
+   - Default provider: browser Web Speech API.
+   - No API key is required for the default browser provider.
+   - The recognized transcript is sent to `/chat` with `channel: "voice_chat"`.
+
+3. Text-to-speech
+   - Default provider: browser SpeechSynthesis.
+   - No API key is required for the default browser provider.
+   - Assistant replies are read aloud only while voice chat is active.
+
+4. Provider readiness
+   - `.env.example` includes placeholders for future OpenAI, Deepgram, and ElevenLabs keys.
+   - The current implementation does not transmit audio or text to external STT/TTS providers.
 
 ## Success Metrics
 
@@ -71,6 +94,7 @@ The first screen is the working support console, not a landing page. The left si
 - The return flow completes in two to three turns.
 - The order-status flow demonstrates a clarifying question when the order number is missing.
 - The presenter can explain every trace step without hidden framework behavior.
+- Voice chat can complete at least one policy or order-status turn in browsers that support speech recognition.
 
 ## Technical Decisions
 
@@ -91,7 +115,7 @@ The first screen is the working support console, not a landing page. The left si
 
 ## Phase Two: Voice Agent
 
-Voice should reuse the same orchestration interface. Speech-to-text produces a transcript, `BooklySupportAgent.handle(...)` processes it, and text-to-speech returns the response. The orchestration trace remains visible for the presenter and support supervisor.
+Voice reuses the same orchestration interface. Speech-to-text produces a transcript, `BooklySupportAgent.handle(...)` processes it, and text-to-speech returns the response. The orchestration trace remains visible for the presenter and support supervisor.
 
 ## Open Questions
 
