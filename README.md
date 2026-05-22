@@ -1,6 +1,6 @@
 # Bookly Support Agent
 
-Text-first local demo for the a solutions engineering take-home. It uses simple Python orchestration, mocked support tools, and a browser UI that makes routing, memory, clarifying questions, and tool calls visible on each turn.
+Text-first local demo for a solutions engineering take-home. It uses simple Python orchestration, mocked support tools, and a browser UI that makes routing, memory, clarifying questions, and tool calls visible on each turn.
 
 ## Run locally
 
@@ -27,4 +27,3 @@ No package install is required for this version.
 - `bookly_agent/tools.py`: mocked order lookup, return creation, and policy search
 
 The first phase intentionally avoids LangGraph or all-in-one agent platforms so the orchestration is easy to explain in a sales engineering demo. Voice can be added next by sending transcripts into the same `BooklySupportAgent.handle(...)` method.
-

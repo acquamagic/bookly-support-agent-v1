@@ -98,4 +98,3 @@ Voice should reuse the same orchestration interface. Speech-to-text produces a t
 - Which LLM provider should be used for the next iteration, if any?
 - Should the final demo emphasize CX leadership value, technical architecture, or both equally?
 - Should the pitch deck include Snyk-style trust, governance, and risk framing as part of the story?
-
