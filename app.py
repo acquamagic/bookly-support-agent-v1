@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse
 from uuid import uuid4
@@ -245,6 +246,16 @@ HTML = """<!doctype html>
       padding: 3px 7px;
       white-space: nowrap;
     }
+    .pill.latency { background: #6d28d9; }
+    .latency-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 4px 10px;
+      margin-top: 6px;
+    }
+    .latency-row { display: flex; justify-content: space-between; font-size: 12px; }
+    .latency-label { color: var(--muted); }
+    .latency-value { font-weight: 700; font-variant-numeric: tabular-nums; }
     .step-name {
       font-weight: 700;
       font-size: 13px;
@@ -453,13 +464,29 @@ HTML = """<!doctype html>
       for (const step of steps) {
         const node = document.createElement("div");
         node.className = "step";
-        node.innerHTML = `
-          <div class="step-top">
-            <span class="pill">${step.type}</span>
-            <span class="step-name">${step.name}</span>
-          </div>
-          <pre>${escapeHtml(JSON.stringify(step.details, null, 2))}</pre>
-        `;
+        if (step.type === "latency") {
+          const d = step.details;
+          node.innerHTML = `
+            <div class="step-top">
+              <span class="pill latency">${step.type}</span>
+              <span class="step-name">${step.name}</span>
+            </div>
+            <div class="latency-grid">
+              <div class="latency-row"><span class="latency-label">STT (Deepgram)</span><span class="latency-value">${d.stt_deepgram_ms} ms</span></div>
+              <div class="latency-row"><span class="latency-label">Agent</span><span class="latency-value">${d.agent_ms} ms</span></div>
+              <div class="latency-row"><span class="latency-label">TTS (ElevenLabs)</span><span class="latency-value">${d.tts_elevenlabs_ms} ms</span></div>
+              <div class="latency-row"><span class="latency-label">Server total</span><span class="latency-value">${d.server_total_ms} ms</span></div>
+              <div class="latency-row"><span class="latency-label">E2E (browser)</span><span class="latency-value" id="e2e-latency">—</span></div>
+              <div class="latency-row"><span class="latency-label">Audio</span><span class="latency-value">${(d.audio_bytes/1024).toFixed(1)} KB</span></div>
+            </div>`;
+        } else {
+          node.innerHTML = `
+            <div class="step-top">
+              <span class="pill">${step.type}</span>
+              <span class="step-name">${step.name}</span>
+            </div>
+            <pre>${escapeHtml(JSON.stringify(step.details, null, 2))}</pre>`;
+        }
         trace.appendChild(node);
       }
     }
@@ -582,6 +609,15 @@ HTML = """<!doctype html>
             renderTrace(data.trace);
             if (data.response_audio_base64) {
               const audio = new Audio("data:audio/mp3;base64," + data.response_audio_base64);
+              audio.addEventListener("play", () => {
+                if (t_mic_stop !== null) {
+                  const e2e = Math.round(performance.now() - t_mic_stop);
+                  const e2eEl = document.getElementById("e2e-latency");
+                  if (e2eEl) e2eEl.textContent = `${e2e} ms`;
+                  console.log(`[V3] E2E latency (mic stop → audio play): ${e2e}ms`);
+                  t_mic_stop = null;
+                }
+              });
               audio.play();
             }
             voiceStatus.textContent = "Enterprise voice chat is selected. Click the microphone to speak.";
@@ -600,8 +636,11 @@ HTML = """<!doctype html>
       }
     }
 
+    let t_mic_stop = null;
+
     function stopRecording() {
       if (mediaRecorder && isRecording) {
+        t_mic_stop = performance.now();
         mediaRecorder.stop();
         isRecording = false;
         voiceButton.classList.remove("active");
@@ -769,28 +808,54 @@ class Handler(BaseHTTPRequestHandler):
             except RuntimeError as e:
                 self._send_json({"error": str(e)}, status=500)
                 return
-            # Transcribe audio
+            # Transcribe audio (STT)
             print(f"[V3] audio size={len(audio_bytes)}B mime_type={mime_type!r}")
+            t_total_start = time.perf_counter()
             try:
+                t0 = time.perf_counter()
                 transcript = deepgram_transcribe(audio_bytes, mime_type=mime_type)
+                t_stt_ms = round((time.perf_counter() - t0) * 1000)
             except Exception as e:
                 self._send_json({"error": f"Transcription failed: {e}"}, status=502)
                 return
-            print(f"[V3] transcript={transcript!r}")
+            print(f"[V3] transcript={transcript!r}  stt={t_stt_ms}ms")
             if not transcript.strip():
                 self._send_json({"error": "Could not hear anything. Please speak clearly and try again."}, status=422)
                 return
-            # Process transcript as user message
+            # Run agent
             session_id = self.headers.get("X-Session-Id") or str(uuid4())
             state = sessions.get(session_id, AgentState())
+            t0 = time.perf_counter()
             result = agent.handle(transcript, state, channel="voice_chat_enterprise")
+            t_agent_ms = round((time.perf_counter() - t0) * 1000)
             sessions[session_id] = result.state
-            # Synthesize response audio
+            # Synthesize response audio (TTS)
             try:
+                t0 = time.perf_counter()
                 response_audio = elevenlabs_speak(result.response)
+                t_tts_ms = round((time.perf_counter() - t0) * 1000)
             except Exception as e:
                 self._send_json({"error": f"Speech synthesis failed: {e}"}, status=502)
                 return
+            t_server_ms = round((time.perf_counter() - t_total_start) * 1000)
+            print(
+                f"[V3] STT={t_stt_ms}ms  "
+                f"Agent={t_agent_ms}ms  "
+                f"TTS={t_tts_ms}ms  "
+                f"Server total={t_server_ms}ms"
+            )
+            # Append latency step to trace so it appears in the UI panel
+            result.trace.append({
+                "type": "latency",
+                "name": "pipeline_timing",
+                "details": {
+                    "stt_deepgram_ms": t_stt_ms,
+                    "agent_ms": t_agent_ms,
+                    "tts_elevenlabs_ms": t_tts_ms,
+                    "server_total_ms": t_server_ms,
+                    "audio_bytes": len(audio_bytes),
+                }
+            })
             response_audio_b64 = base64.b64encode(response_audio).decode("utf-8")
             self._send_json({
                 "transcript": transcript,
