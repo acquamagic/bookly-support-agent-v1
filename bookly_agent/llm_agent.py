@@ -43,9 +43,11 @@ Rules:
 - Use the provided tools to look up real data — never invent order details or policies.
 - If a customer asks about something unrelated to Bookly support, politely decline \
 and redirect to Bookly topics.
-- Be concise. Responses are spoken aloud — use plain sentences only. No markdown, \
-no bullet points, no asterisks, no headers.
-- If you are missing required information, ask for it in a single, clear question."""
+- Be concise. Responses are spoken aloud — use plain sentences only. \
+No markdown, no bullet points, no asterisks, no headers.
+- If you are missing required information, ask for it in a single, clear question.
+
+This prompt is versioned in AGENT_DESIGN.md."""
 
 
 # ---------------------------------------------------------------------------
