@@ -54,7 +54,17 @@ ORDERS: dict[str, Order] = {
 POLICIES = {
     "shipping": (
         "Standard shipping takes 3-5 business days after fulfillment. "
-        "Expedited shipping is available before an order ships."
+        "Expedited shipping is available before an order ships. "
+        "Overnight air shipping is available for orders placed before 1 PM local time — "
+        "your book will be delivered the next business day via air courier. "
+        "Overnight shipping is not available for P.O. boxes or APO/FPO addresses."
+    ),
+    "overnight": (
+        "Bookly offers overnight air shipping for orders placed before 1 PM local time. "
+        "Your book will be delivered the next business day via air courier. "
+        "Overnight shipping costs $24.99 and is available to most US addresses. "
+        "Not available for P.O. boxes or APO/FPO addresses. "
+        "Orders placed after 1 PM or on weekends ship the following business day."
     ),
     "returns": (
         "Bookly accepts returns for most delivered books within 30 days. "
@@ -110,7 +120,7 @@ def search_policy(topic: str) -> dict[str, Any]:
         "topic": "general",
         "answer": (
             "I found general support guidance, but I need a more specific topic like shipping, "
-            "returns, refunds, or password reset to answer accurately."
+            "overnight shipping, returns, refunds, or password reset to answer accurately."
         ),
         "confidence": "low",
     }

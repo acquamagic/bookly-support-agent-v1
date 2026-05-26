@@ -243,6 +243,8 @@ class BooklySupportAgent:
             return "refunds"
         if "return" in lower:
             return "returns"
+        if "overnight" in lower or "next day" in lower or "air" in lower:
+            return "overnight"
         return "shipping"
 
     def _trace(self, trace: list[dict[str, Any]], step_type: str, name: str, details: dict[str, Any]) -> None:
