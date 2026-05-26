@@ -1,11 +1,19 @@
 from __future__ import annotations
 
 import json
+import os
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse
 from uuid import uuid4
 
+try:
+    from dotenv import load_dotenv
+    load_dotenv(dotenv_path=os.path.join(os.path.dirname(__file__), ".env"), override=True)
+except ImportError:
+    pass  # dotenv optional; fall back to real environment variables
+
 from bookly_agent.orchestrator import AgentState, BooklySupportAgent
+from bookly_agent.voice_providers import deepgram_transcribe, elevenlabs_speak
 
 
 HOST = "127.0.0.1"
@@ -314,12 +322,32 @@ HTML = """<!doctype html>
               <path d="M19 10v2a7 7 0 0 1-14 0v-2"></path>
               <path d="M12 19v3"></path>
             </svg>
-            Voice chat
+            Voice chat (Free)
+          </button>
+          <button id="voice-chat-enterprise-mode" class="mode-button voice" type="button" aria-pressed="false">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true">
+              <path d="M12 3a3 3 0 0 0-3 3v6a3 3 0 0 0 6 0V6a3 3 0 0 0-3-3Z"></path>
+              <path d="M19 10v2a7 7 0 0 1-14 0v-2"></path>
+              <path d="M12 19v3"></path>
+            </svg>
+            Voice chat (Enterprise)
           </button>
         </div>
         <div id="voice-status" class="voice-status">Web chat is selected.</div>
       </div>
+      <div id="mic-selector-bar" style="display:none; padding: 6px 24px 10px; gap: 8px; align-items: center; display: none; flex-wrap: wrap;">
+        <label for="mic-select" style="font-size:13px; color: var(--muted); white-space: nowrap;">Microphone:</label>
+        <select id="mic-select" style="flex:1; min-width:0; font: inherit; font-size:13px; border:1px solid var(--line); border-radius:6px; padding: 5px 8px; background:#fff; color: var(--ink);"></select>
+      </div>
       <form id="form">
+        <input id="audio-file" type="file" accept="audio/*" hidden>
+        <button id="upload-audio" class="icon" type="button" aria-label="Upload audio file" title="Upload audio file instead of recording" hidden>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true">
+            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+            <polyline points="17 8 12 3 7 8"></polyline>
+            <line x1="12" y1="3" x2="12" y2="15"></line>
+          </svg>
+        </button>
         <button id="voice" class="icon" type="button" aria-label="Start voice input" title="Start voice input" hidden>
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true">
             <path d="M12 3a3 3 0 0 0-3 3v6a3 3 0 0 0 6 0V6a3 3 0 0 0-3-3Z"></path>
@@ -349,12 +377,37 @@ HTML = """<!doctype html>
     const input = document.querySelector("#message");
     const webChatMode = document.querySelector("#web-chat-mode");
     const voiceChatMode = document.querySelector("#voice-chat-mode");
+    const voiceChatEnterpriseMode = document.querySelector("#voice-chat-enterprise-mode");
     const voiceButton = document.querySelector("#voice");
+    const uploadButton = document.querySelector("#upload-audio");
+    const audioFileInput = document.querySelector("#audio-file");
     const voiceStatus = document.querySelector("#voice-status");
+    const micSelectorBar = document.querySelector("#mic-selector-bar");
+    const micSelect = document.querySelector("#mic-select");
+
+    async function populateMicList() {
+      // getUserMedia first so macOS reveals device labels
+      try { await navigator.mediaDevices.getUserMedia({ audio: true }); } catch (_) {}
+      const devices = await navigator.mediaDevices.enumerateDevices();
+      const inputs = devices.filter(d => d.kind === "audioinput");
+      micSelect.innerHTML = "";
+      inputs.forEach((d, i) => {
+        const opt = document.createElement("option");
+        opt.value = d.deviceId;
+        opt.textContent = d.label || `Microphone ${i + 1}`;
+        micSelect.appendChild(opt);
+      });
+      if (inputs.length === 0) {
+        voiceStatus.textContent = "No microphone found. Please connect one and retry.";
+      }
+    }
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
     const recognition = SpeechRecognition ? new SpeechRecognition() : null;
     let activeChannel = "web_chat";
     let isListening = false;
+    let mediaRecorder = null;
+    let audioChunks = [];
+    let isRecording = false;
 
     if (recognition) {
       recognition.lang = "en-US";
@@ -427,22 +480,33 @@ HTML = """<!doctype html>
     function setMode(channel) {
       activeChannel = channel;
       const isVoice = channel === "voice_chat";
-      webChatMode.classList.toggle("active", !isVoice);
-      voiceChatMode.classList.toggle("active", isVoice);
-      webChatMode.setAttribute("aria-pressed", String(!isVoice));
-      voiceChatMode.setAttribute("aria-pressed", String(isVoice));
-      voiceButton.hidden = !isVoice;
-      input.placeholder = isVoice
+      const isEnterprise = channel === "voice_chat_enterprise";
+      webChatMode.classList.toggle("active", channel === "web_chat");
+      voiceChatMode.classList.toggle("active", channel === "voice_chat");
+      voiceChatEnterpriseMode.classList.toggle("active", channel === "voice_chat_enterprise");
+      webChatMode.setAttribute("aria-pressed", String(channel === "web_chat"));
+      voiceChatMode.setAttribute("aria-pressed", String(channel === "voice_chat"));
+      voiceChatEnterpriseMode.setAttribute("aria-pressed", String(channel === "voice_chat_enterprise"));
+      voiceButton.hidden = !(isVoice || isEnterprise);
+      uploadButton.hidden = !isEnterprise;
+      input.placeholder = (isVoice || isEnterprise)
         ? "Click the microphone or type your Bookly support request"
         : "Ask about an order, return, refund, shipping, or password reset";
-      if (!isVoice) {
+      if (!isVoice && !isEnterprise) {
         if (isListening && recognition) recognition.stop();
         window.speechSynthesis?.cancel();
+        micSelectorBar.style.display = "none";
         voiceStatus.textContent = "Web chat is selected.";
         return;
       }
+      if (isEnterprise) {
+        micSelectorBar.style.display = "flex";
+        populateMicList();
+      } else {
+        micSelectorBar.style.display = "none";
+      }
       voiceStatus.textContent = recognition
-        ? "Voice chat is selected. Click the microphone to speak."
+        ? (isEnterprise ? "Enterprise voice chat is selected. Select your mic then click the microphone to speak." : "Voice chat is selected. Click the microphone to speak.")
         : "Voice input is unavailable in this browser. You can still type in voice mode.";
     }
 
@@ -460,28 +524,102 @@ HTML = """<!doctype html>
       speak(data.response);
     }
 
-    form.addEventListener("submit", event => {
-      event.preventDefault();
-      const text = input.value.trim();
-      if (text) sendMessage(text);
-    });
+    let activeStream = null;
 
-    document.querySelector("#reset").addEventListener("click", async () => {
-      await fetch("/reset", {
-        method: "POST",
-        headers: {"Content-Type": "application/json"},
-        body: JSON.stringify({session_id: sessionId})
-      });
-      chat.innerHTML = "";
-      trace.innerHTML = "";
-      window.speechSynthesis?.cancel();
-      addMessage("agent", "Hi, I’m Bookly’s support agent. I can check order status, start returns, and answer policy questions.");
-    });
+    async function startRecording() {
+      if (!navigator.mediaDevices || !window.MediaRecorder) {
+        voiceStatus.textContent = "Enterprise voice input is unavailable in this browser.";
+        return;
+      }
+      try {
+        const deviceId = micSelect.value;
+        const audioConstraints = deviceId
+          ? { audio: { deviceId: { exact: deviceId } } }
+          : { audio: true };
+        activeStream = await navigator.mediaDevices.getUserMedia(audioConstraints);
+        const track = activeStream.getAudioTracks()[0];
+        // Negotiate an audio-only MIME type Deepgram supports; avoid video/webm default on Chrome
+        const preferredTypes = [
+          "audio/webm;codecs=opus",
+          "audio/webm",
+          "audio/ogg;codecs=opus",
+          "audio/ogg",
+          "audio/mp4",
+        ];
+        const mimeType = preferredTypes.find(t => MediaRecorder.isTypeSupported(t)) || "";
+        mediaRecorder = mimeType
+          ? new MediaRecorder(activeStream, { mimeType })
+          : new MediaRecorder(activeStream);
+        const actualMimeType = mediaRecorder.mimeType || mimeType || "audio/webm";
+        console.log("[V3] recording with mimeType:", actualMimeType);
+        audioChunks = [];
+        mediaRecorder.ondataavailable = event => {
+          if (event.data.size > 0) audioChunks.push(event.data);
+        };
+        mediaRecorder.onstop = async () => {
+          activeStream.getTracks().forEach(t => t.stop());
+          activeStream = null;
+          try {
+            const audioBlob = new Blob(audioChunks, { type: actualMimeType });
+            const arrayBuffer = await audioBlob.arrayBuffer();
+            const bytes = new Uint8Array(arrayBuffer);
+            let binary = '';
+            for (let i = 0; i < bytes.byteLength; i++) binary += String.fromCharCode(bytes[i]);
+            const audioBase64 = btoa(binary);
+            voiceStatus.textContent = "Transcribing...";
+            const res = await fetch("/api/v3/audio", {
+              method: "POST",
+              headers: { "Content-Type": "application/json", "X-Session-Id": sessionId },
+              body: JSON.stringify({ audio_base64: audioBase64, mime_type: actualMimeType })
+            });
+            const data = await res.json();
+            if (data.error) {
+              voiceStatus.textContent = `Error: ${data.error}`;
+              return;
+            }
+            addMessage("user", data.transcript);
+            addMessage("agent", data.response);
+            renderTrace(data.trace);
+            if (data.response_audio_base64) {
+              const audio = new Audio("data:audio/mp3;base64," + data.response_audio_base64);
+              audio.play();
+            }
+            voiceStatus.textContent = "Enterprise voice chat is selected. Click the microphone to speak.";
+          } catch (err) {
+            voiceStatus.textContent = `Error: ${err.message}`;
+          }
+        };
+        mediaRecorder.start();
+        isRecording = true;
+        voiceButton.classList.add("active");
+        voiceButton.setAttribute("aria-label", "Stop voice input");
+        voiceButton.title = "Stop voice input";
+        voiceStatus.textContent = "Recording... Click mic to stop.";
+      } catch (err) {
+        voiceStatus.textContent = `Microphone error: ${err.message}`;
+      }
+    }
 
-    webChatMode.addEventListener("click", () => setMode("web_chat"));
-    voiceChatMode.addEventListener("click", () => setMode("voice_chat"));
+    function stopRecording() {
+      if (mediaRecorder && isRecording) {
+        mediaRecorder.stop();
+        isRecording = false;
+        voiceButton.classList.remove("active");
+        voiceButton.setAttribute("aria-label", "Start voice input");
+        voiceButton.title = "Start voice input";
+        voiceStatus.textContent = "Processing...";
+      }
+    }
 
     voiceButton.addEventListener("click", () => {
+      if (activeChannel === "voice_chat_enterprise") {
+        if (isRecording) {
+          stopRecording();
+        } else {
+          startRecording();
+        }
+        return;
+      }
       if (!recognition) {
         voiceStatus.textContent = "Voice input is unavailable in this browser. You can still type.";
         input.focus();
@@ -493,6 +631,64 @@ HTML = """<!doctype html>
       }
       recognition.start();
     });
+
+    uploadButton.addEventListener("click", () => audioFileInput.click());
+
+    audioFileInput.addEventListener("change", async () => {
+      const file = audioFileInput.files[0];
+      if (!file) return;
+      audioFileInput.value = "";
+      voiceStatus.textContent = "Uploading & transcribing...";
+      try {
+        const arrayBuffer = await file.arrayBuffer();
+        const bytes = new Uint8Array(arrayBuffer);
+        let binary = '';
+        for (let i = 0; i < bytes.byteLength; i++) binary += String.fromCharCode(bytes[i]);
+        const audioBase64 = btoa(binary);
+        const res = await fetch("/api/v3/audio", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "X-Session-Id": sessionId },
+          body: JSON.stringify({ audio_base64: audioBase64, mime_type: file.type || "audio/webm" })
+        });
+        const data = await res.json();
+        if (data.error) { voiceStatus.textContent = `Error: ${data.error}`; return; }
+        addMessage("user", data.transcript);
+        addMessage("agent", data.response);
+        renderTrace(data.trace);
+        if (data.response_audio_base64) {
+          new Audio("data:audio/mp3;base64," + data.response_audio_base64).play();
+        }
+        voiceStatus.textContent = "Enterprise voice chat is selected. Select your mic then click the microphone to speak.";
+      } catch (err) {
+        voiceStatus.textContent = `Error: ${err.message}`;
+      }
+    });
+
+    form.addEventListener("submit", event => {
+      event.preventDefault();
+      const text = input.value.trim();
+      if (!text) return;
+      sendMessage(text);
+    });
+
+    document.querySelector("#reset").addEventListener("click", async () => {
+      const res = await fetch("/reset", {
+        method: "POST",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({session_id: sessionId})
+      });
+      if (res.ok) {
+        chat.innerHTML = "";
+        trace.innerHTML = "";
+        sessionId = crypto.randomUUID();
+        localStorage.setItem("bookly_session_id", sessionId);
+        addMessage("agent", "Hi, I’m Bookly’s support agent. I can check order status, start returns, and answer policy questions.");
+      }
+    });
+
+    webChatMode.addEventListener("click", () => setMode("web_chat"));
+    voiceChatMode.addEventListener("click", () => setMode("voice_chat"));
+    voiceChatEnterpriseMode.addEventListener("click", () => setMode("voice_chat_enterprise"));
 
     document.querySelectorAll("[data-example]").forEach(button => {
       button.addEventListener("click", () => {
@@ -509,6 +705,17 @@ HTML = """<!doctype html>
 """
 
 
+def check_v3_env():
+    """Check that required V3 API keys are set for enterprise voice mode."""
+    missing = []
+    if not os.environ.get("DEEPGRAM_API_KEY"):
+        missing.append("DEEPGRAM_API_KEY")
+    if not os.environ.get("ELEVENLABS_API_KEY"):
+        missing.append("ELEVENLABS_API_KEY")
+    if missing:
+        raise RuntimeError(f"Missing required V3 API keys: {', '.join(missing)}")
+
+
 class Handler(BaseHTTPRequestHandler):
     def do_GET(self) -> None:
         if urlparse(self.path).path != "/":
@@ -522,6 +729,76 @@ class Handler(BaseHTTPRequestHandler):
         self.wfile.write(body)
 
     def do_POST(self) -> None:
+        path = urlparse(self.path).path
+        if path == "/api/v3/audio":
+            # Handle audio upload for V3 enterprise voice chat
+            content_type = self.headers.get("Content-Type", "")
+            if "multipart/form-data" in content_type:
+                # Parse multipart form data
+                import cgi
+                form = cgi.FieldStorage(
+                    fp=self.rfile,
+                    headers=self.headers,
+                    environ={
+                        'REQUEST_METHOD': 'POST',
+                        'CONTENT_TYPE': self.headers['Content-Type'],
+                    }
+                )
+                audio_file = form['audio'] if 'audio' in form else None
+                if not audio_file or not audio_file.file:
+                    self._send_json({"error": "audio_file_required"}, status=400)
+                    return
+                audio_bytes = audio_file.file.read()
+            else:
+                # Accept base64-encoded audio in JSON
+                payload = self._read_json()
+                audio_b64 = payload.get("audio_base64")
+                mime_type = payload.get("mime_type", "audio/webm")
+                import base64
+                if not audio_b64:
+                    self._send_json({"error": "audio_base64_required"}, status=400)
+                    return
+                try:
+                    audio_bytes = base64.b64decode(audio_b64)
+                except Exception:
+                    self._send_json({"error": "invalid_audio_base64"}, status=400)
+                    return
+            # Check V3 env
+            try:
+                check_v3_env()
+            except RuntimeError as e:
+                self._send_json({"error": str(e)}, status=500)
+                return
+            # Transcribe audio
+            print(f"[V3] audio size={len(audio_bytes)}B mime_type={mime_type!r}")
+            try:
+                transcript = deepgram_transcribe(audio_bytes, mime_type=mime_type)
+            except Exception as e:
+                self._send_json({"error": f"Transcription failed: {e}"}, status=502)
+                return
+            print(f"[V3] transcript={transcript!r}")
+            if not transcript.strip():
+                self._send_json({"error": "Could not hear anything. Please speak clearly and try again."}, status=422)
+                return
+            # Process transcript as user message
+            session_id = self.headers.get("X-Session-Id") or str(uuid4())
+            state = sessions.get(session_id, AgentState())
+            result = agent.handle(transcript, state, channel="voice_chat_enterprise")
+            sessions[session_id] = result.state
+            # Synthesize response audio
+            try:
+                response_audio = elevenlabs_speak(result.response)
+            except Exception as e:
+                self._send_json({"error": f"Speech synthesis failed: {e}"}, status=502)
+                return
+            response_audio_b64 = base64.b64encode(response_audio).decode("utf-8")
+            self._send_json({
+                "transcript": transcript,
+                "response": result.response,
+                "response_audio_base64": response_audio_b64,
+                "trace": result.trace
+            })
+            return
         path = urlparse(self.path).path
         payload = self._read_json()
         session_id = payload.get("session_id") or str(uuid4())
@@ -541,8 +818,26 @@ class Handler(BaseHTTPRequestHandler):
             return
 
         channel = str(payload.get("channel", "web_chat")).strip().lower()
-        if channel not in {"web_chat", "voice_chat"}:
+        if channel not in {"web_chat", "voice_chat", "voice_chat_enterprise"}:
             channel = "web_chat"
+
+        # V3: Check API keys before using enterprise voice
+        if channel == "voice_chat_enterprise":
+            try:
+                check_v3_env()
+            except RuntimeError as e:
+                self._send_json({"error": str(e)}, status=500)
+                return
+            # Example usage (not wired to UI):
+            # transcript = deepgram_transcribe("audio.wav")
+            # audio_bytes = elevenlabs_speak("Hello from ElevenLabs!")
+
+        # In future: route to pluggable STT/TTS provider based on channel and config
+        # Example: if channel == "voice_chat_enterprise":
+        #     stt_provider = get_stt_provider()  # e.g., Deepgram, OpenAI, LiveKit, etc.
+        #     tts_provider = get_tts_provider()  # e.g., ElevenLabs, OpenAI, LiveKit, etc.
+        #     # Call provider-specific logic here
+        # For now, all channels use the same agent logic
 
         state = sessions.get(session_id, AgentState())
         result = agent.handle(message, state, channel=channel)
@@ -570,6 +865,10 @@ class Handler(BaseHTTPRequestHandler):
 
 
 def main() -> None:
+    dg  = os.environ.get("DEEPGRAM_API_KEY", "")
+    el  = os.environ.get("ELEVENLABS_API_KEY", "")
+    print(f"DEEPGRAM_API_KEY   : {'set (' + dg[:8] + '...)' if dg else 'NOT SET — V3 will fail'}")
+    print(f"ELEVENLABS_API_KEY : {'set (' + el[:8] + '...)' if el else 'NOT SET — V3 will fail'}")
     server = ThreadingHTTPServer((HOST, PORT), Handler)
     print(f"Bookly support agent running at http://{HOST}:{PORT}")
     server.serve_forever()

@@ -1,4 +1,4 @@
-# PRD: Bookly Support Agent V2
+# PRD: Bookly Support Agent V2/V3
 
 ## Summary
 
@@ -116,6 +116,18 @@ The first screen is the working support console, not a landing page. The left si
 ## Phase Two: Voice Agent
 
 Voice reuses the same orchestration interface. Speech-to-text produces a transcript, `BooklySupportAgent.handle(...)` processes it, and text-to-speech returns the response. The orchestration trace remains visible for the presenter and support supervisor.
+
+## V3: Pluggable, Enterprise-Ready Voice (Agile Integration) ✅ Complete
+
+- **Voice chat (Enterprise)** mode is fully implemented and tested end-to-end.
+- **STT**: Deepgram (`nova-2` model, `smart_format=true`). Audio recorded as `audio/webm;codecs=opus` in the browser and POSTed to `/api/v3/audio`.
+- **TTS**: ElevenLabs (voice `EXAVITQu4vr4xnSDxMaL`). Agent reply is synthesised to MP3 and played back in the browser automatically.
+- **Mic selector UI**: dropdown lists all audio input devices so presenters can pick the correct hardware mic (avoids silent virtual devices).
+- **File upload fallback**: upload icon lets users send a pre-recorded audio file when no mic is available.
+- **Key validation**: `pytest tests/test_voice_providers.py -v` verifies both API keys authenticate and return valid responses before a demo.
+- **Debug logging intentionally left on**: server prints `[V3] audio size`, `mime_type`, and `transcript` on every request; browser console logs the selected mic and recording MIME type. This is useful for live demos and rapid diagnosis.
+- Architecture is designed for **agile, pluggable provider integration**: swap STT or TTS components (e.g., add LiveKit) with minimal/no downtime.
+- No vendor lock-in: future providers integrate behind the same `deepgram_transcribe` / `elevenlabs_speak` interface.
 
 ## Open Questions
 
