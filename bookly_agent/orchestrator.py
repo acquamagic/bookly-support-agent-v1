@@ -16,6 +16,7 @@ EMAIL_RE = re.compile(r"[\w.+-]+@[\w-]+\.[\w.-]+")
 class AgentState:
     pending_intent: str | None = None
     slots: dict[str, str] = field(default_factory=dict)
+    messages: list = field(default_factory=list)  # LLM conversation history (V3)
 
 
 @dataclass

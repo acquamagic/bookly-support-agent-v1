@@ -14,6 +14,7 @@ except ImportError:
     pass  # dotenv optional; fall back to real environment variables
 
 from bookly_agent.orchestrator import AgentState, BooklySupportAgent
+from bookly_agent.llm_agent import BooklyLLMAgent
 from bookly_agent.voice_providers import deepgram_transcribe, elevenlabs_speak
 
 
@@ -21,6 +22,7 @@ HOST = "127.0.0.1"
 PORT = 8000
 
 agent = BooklySupportAgent()
+llm_agent = BooklyLLMAgent()
 sessions: dict[str, AgentState] = {}
 
 
@@ -751,6 +753,8 @@ def check_v3_env():
         missing.append("DEEPGRAM_API_KEY")
     if not os.environ.get("ELEVENLABS_API_KEY"):
         missing.append("ELEVENLABS_API_KEY")
+    if not os.environ.get("ANTHROPIC_API_KEY"):
+        missing.append("ANTHROPIC_API_KEY")
     if missing:
         raise RuntimeError(f"Missing required V3 API keys: {', '.join(missing)}")
 
@@ -822,11 +826,11 @@ class Handler(BaseHTTPRequestHandler):
             if not transcript.strip():
                 self._send_json({"error": "Could not hear anything. Please speak clearly and try again."}, status=422)
                 return
-            # Run agent
+            # Run LLM agent (V3 uses OpenAI)
             session_id = self.headers.get("X-Session-Id") or str(uuid4())
             state = sessions.get(session_id, AgentState())
             t0 = time.perf_counter()
-            result = agent.handle(transcript, state, channel="voice_chat_enterprise")
+            result = llm_agent.handle(transcript, state, channel="voice_chat_enterprise")
             t_agent_ms = round((time.perf_counter() - t0) * 1000)
             sessions[session_id] = result.state
             # Synthesize response audio (TTS)
@@ -905,7 +909,10 @@ class Handler(BaseHTTPRequestHandler):
         # For now, all channels use the same agent logic
 
         state = sessions.get(session_id, AgentState())
-        result = agent.handle(message, state, channel=channel)
+        if channel == "voice_chat_enterprise":
+            result = llm_agent.handle(message, state, channel=channel)
+        else:
+            result = agent.handle(message, state, channel=channel)
         sessions[session_id] = result.state
         self._send_json({"response": result.response, "trace": result.trace})
 
@@ -932,8 +939,10 @@ class Handler(BaseHTTPRequestHandler):
 def main() -> None:
     dg  = os.environ.get("DEEPGRAM_API_KEY", "")
     el  = os.environ.get("ELEVENLABS_API_KEY", "")
-    print(f"DEEPGRAM_API_KEY   : {'set (' + dg[:8] + '...)' if dg else 'NOT SET — V3 will fail'}")
-    print(f"ELEVENLABS_API_KEY : {'set (' + el[:8] + '...)' if el else 'NOT SET — V3 will fail'}")
+    ant = os.environ.get("ANTHROPIC_API_KEY", "")
+    print(f"DEEPGRAM_API_KEY   : {'set (' + dg[:8]  + '...)' if dg  else 'NOT SET — V3 will fail'}")
+    print(f"ELEVENLABS_API_KEY : {'set (' + el[:8]  + '...)' if el  else 'NOT SET — V3 will fail'}")
+    print(f"ANTHROPIC_API_KEY  : {'set (' + ant[:8] + '...)' if ant else 'NOT SET — V3 will fail'}")
     server = ThreadingHTTPServer((HOST, PORT), Handler)
     print(f"Bookly support agent running at http://{HOST}:{PORT}")
     server.serve_forever()
