@@ -5,6 +5,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from .tools import create_return, lookup_order, search_policy
+from . import guardrails
 
 
 ORDER_RE = re.compile(r"\b(?:BLY[-\s]?)?\d{4}\b", re.IGNORECASE)
@@ -36,6 +37,20 @@ class BooklySupportAgent:
         lower = text.lower()
 
         self._trace(trace, "input", "received", {"message": text, "channel": channel})
+
+        # PII / PCI guardrail — runs before slot extraction or intent routing
+        hits = guardrails.check(text)
+        if hits:
+            self._trace(trace, "guardrail", "pii_pci_blocked", {
+                "detected": [{"category": h.category, "kind": h.kind} for h in hits],
+                "action": "blocked — safe response returned, message not processed",
+            })
+            return AgentResult(
+                response=guardrails.SAFE_RESPONSE,
+                trace=trace,
+                state=state,
+            )
+
         extracted = self._extract_slots(text)
         state.slots.update({key: value for key, value in extracted.items() if value})
         self._trace(trace, "memory", "updated_slots", {"slots": dict(state.slots)})
