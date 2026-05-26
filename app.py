@@ -298,7 +298,7 @@ HTML = """<!doctype html>
       <header>
         <div>
           <h1>Bookly Support Agent</h1>
-          <div class="subtitle">V2 demo with web chat by default and optional browser voice chat</div>
+          <div class="subtitle">Web chat (V1) · Browser voice (V2) · Enterprise voice via Deepgram &amp; ElevenLabs (V3)</div>
         </div>
         <button id="reset" type="button">Reset</button>
       </header>
