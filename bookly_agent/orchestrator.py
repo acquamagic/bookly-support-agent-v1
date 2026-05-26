@@ -116,11 +116,15 @@ class BooklySupportAgent:
 
         state.pending_intent = None
         state.slots.clear()
+        if order["status"] == "Delivered":
+            timing = f"Delivered on {order['delivered_on']}." if order.get("delivered_on") else ""
+        else:
+            timing = f"Estimated timing: {order['eta']}." if order.get("eta") else ""
         return AgentResult(
             response=(
                 f"Order {order['order_id']} for *{order['item']}* is currently **{order['status']}**. "
-                f"Estimated timing: {order['eta']}."
-            ),
+                f"{timing}"
+            ).strip(),
             trace=trace,
             state=state,
         )
