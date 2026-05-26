@@ -57,7 +57,7 @@ Click `Voice chat (Enterprise)` to activate. A mic selector dropdown appears —
 
 1. Browser records audio (WebM/Opus) and POSTs it to `/api/v3/audio`
 2. **Deepgram** transcribes the audio → transcript
-3. `BooklySupportAgent.handle(...)` processes the transcript (same as web/V2)
+3. **Claude** (`claude-haiku-4-5`) understands intent and calls tools as needed
 4. **ElevenLabs** synthesises the agent reply → MP3 played back in the browser
 
 Required keys in `.env`:
@@ -65,6 +65,7 @@ Required keys in `.env`:
 ```
 DEEPGRAM_API_KEY=...
 ELEVENLABS_API_KEY=...
+ANTHROPIC_API_KEY=...
 ```
 
 Run `pytest tests/test_voice_providers.py -v` to verify both keys are valid before demoing.
