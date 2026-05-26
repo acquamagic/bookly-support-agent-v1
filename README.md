@@ -24,12 +24,11 @@ Local support-agent demo for a my passion project to create amazing CX agents. V
 ## Run locally
 
 ```bash
+pip install -r requirements.txt
 python3 app.py
 ```
 
 Open http://127.0.0.1:8000.
-
-No package install is required for this version.
 
 ## V1: Web Chat (Baseline)
 
