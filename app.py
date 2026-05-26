@@ -1,3 +1,4 @@
+"""Bookly support agent app."""
 from __future__ import annotations
 
 import json
