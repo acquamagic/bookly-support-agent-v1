@@ -311,7 +311,7 @@ HTML = """<!doctype html>
       <header>
         <div>
           <h1>Bookly Support Agent</h1>
-          <div class="subtitle">Web chat (V1) · Browser voice (V2) · Enterprise voice via Deepgram &amp; ElevenLabs (V3)</div>
+          <div class="subtitle">Web chat (V1) · Browser voice (V2) · Enterprise voice via Deepgram, Anthropic &amp; ElevenLabs (V3)</div>
         </div>
         <button id="reset" type="button">Reset</button>
       </header>
@@ -475,7 +475,7 @@ HTML = """<!doctype html>
             </div>
             <div class="latency-grid">
               <div class="latency-row"><span class="latency-label">STT (Deepgram)</span><span class="latency-value">${d.stt_deepgram_ms} ms</span></div>
-              <div class="latency-row"><span class="latency-label">Agent</span><span class="latency-value">${d.agent_ms} ms</span></div>
+              <div class="latency-row"><span class="latency-label">LLM (Anthropic)</span><span class="latency-value">${d.agent_ms} ms</span></div>
               <div class="latency-row"><span class="latency-label">TTS (ElevenLabs)</span><span class="latency-value">${d.tts_elevenlabs_ms} ms</span></div>
               <div class="latency-row"><span class="latency-label">Server total</span><span class="latency-value">${d.server_total_ms} ms</span></div>
               <div class="latency-row"><span class="latency-label">E2E (browser)</span><span class="latency-value" id="e2e-latency">—</span></div>
@@ -844,7 +844,7 @@ class Handler(BaseHTTPRequestHandler):
             t_server_ms = round((time.perf_counter() - t_total_start) * 1000)
             print(
                 f"[V3] STT={t_stt_ms}ms  "
-                f"Agent={t_agent_ms}ms  "
+                f"LLM(Anthropic)={t_agent_ms}ms  "
                 f"TTS={t_tts_ms}ms  "
                 f"Server total={t_server_ms}ms"
             )
